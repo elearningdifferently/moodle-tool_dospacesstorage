@@ -113,18 +113,18 @@ class file_system extends \file_system {
      *
      * @param string $pathname Path to local file
      * @param string|null $contenthash Content hash (SHA1). If null, computed from file.
-     * @return bool Success
+     * @return array (contenthash, filesize, newfile)
      */
     public function add_file_from_path($pathname, $contenthash = null) {
-        if ($contenthash === null) {
-            $contenthash = @hash_file('sha1', $pathname) ?: '';
-        }
+        global $CFG;
+        [$contenthash, $filesize] = \file_system::validate_hash_and_file_size($contenthash, $pathname);
+
         $key = $this->get_remote_path_from_hash($contenthash);
         
         $this->log_debug('add_file_from_path called', [
             'contenthash' => substr($contenthash, 0, 8) . '...',
             'pathname' => $pathname,
-            'filesize' => file_exists($pathname) ? filesize($pathname) : 'file not found',
+            'filesize' => $filesize,
             'key' => $key,
         ]);
         
@@ -140,17 +140,26 @@ class file_system extends \file_system {
                 'duration_ms' => $duration,
             ]);
             
-            // Add to local cache
-            $this->cache->add($contenthash, $pathname);
+            // Add to local cache (store a local copy path consistent with cache manager)
+            $cachepath = $this->cache->get_cache_path($contenthash);
+            $dir = dirname($cachepath);
+            if (!is_dir($dir)) {
+                mkdir($dir, 0777, true);
+            }
+            // Copy local source into cache to avoid re-download in this request.
+            @copy($pathname, $cachepath);
+            $this->cache->add($contenthash, $cachepath);
             
-            return true;
+            // Return expected tuple
+            return [$contenthash, $filesize, true];
         } catch (\Exception $e) {
             $this->log_debug('Upload failed', [
                 'contenthash' => substr($contenthash, 0, 8) . '...',
                 'error' => $e->getMessage(),
             ]);
             debugging('Failed to upload file to DO Spaces: ' . $e->getMessage(), DEBUG_DEVELOPER);
-            return false;
+            // On failure, still return tuple per contract with newfile=false.
+            return [$contenthash, $filesize, false];
         }
     }
 
@@ -158,19 +167,14 @@ class file_system extends \file_system {
      * Add file from string content.
      *
      * @param string $content File content
-     * @param string|null $contenthash Content hash. If null, computed from content.
-     * @return bool Success
+     * @return array (contenthash, filesize, newfile)
      */
-    public function add_file_from_string($content, $contenthash = null) {
+    public function add_file_from_string($content) {
         // Write to temp file first
         $tempfile = tempnam(sys_get_temp_dir(), 'moodle_');
         file_put_contents($tempfile, $content);
-        if ($contenthash === null) {
-            $contenthash = sha1($content);
-        }
-        
+        $contenthash = sha1($content);
         $result = $this->add_file_from_path($tempfile, $contenthash);
-        
         @unlink($tempfile);
         return $result;
     }
@@ -315,17 +319,37 @@ class file_system extends \file_system {
     }
 
     /**
-     * Get file content.
+     * Helper: Get file content by hash (do not override core signature).
      *
      * @param string $contenthash Content hash
-     * @return string|bool File content or false
+     * @return string|false
      */
-    public function get_content($contenthash) {
+    public function get_content_by_hash($contenthash) {
         $path = $this->get_local_path_from_hash($contenthash, true);
         if ($path && file_exists($path)) {
             return file_get_contents($path);
         }
         return false;
+    }
+
+    /**
+     * Copy content of stored_file to target pathname.
+     *
+     * @param \stored_file $file
+     * @param string $target
+     * @return bool
+     */
+    public function copy_content_from_storedfile(\stored_file $file, $target) {
+        // Ensure local path available.
+        $source = $this->get_local_path_from_storedfile($file, true);
+        if (!is_readable($source)) {
+            return false;
+        }
+        $dir = dirname($target);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+        return @copy($source, $target);
     }
 
     /**
