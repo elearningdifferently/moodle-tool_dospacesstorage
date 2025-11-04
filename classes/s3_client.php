@@ -90,6 +90,9 @@ class s3_client {
             CURLOPT_UPLOAD => true,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT => 20,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
         ]);
 
         $response = curl_exec($ch);
@@ -131,6 +134,9 @@ class s3_client {
             curl_setopt_array($ch, [
                 CURLOPT_FILE => $fp,
                 CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_TIMEOUT => 20,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             ]);
         } else {
             $headers = [
@@ -143,6 +149,9 @@ class s3_client {
                 CURLOPT_HTTPHEADER => $this->format_headers($headers),
                 CURLOPT_FILE => $fp,
                 CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_TIMEOUT => 20,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             ]);
         }
 
@@ -183,6 +192,9 @@ class s3_client {
             CURLOPT_HTTPHEADER => $this->format_headers($headers),
             CURLOPT_NOBODY => true,
             CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_TIMEOUT => 8,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
         ]);
 
         curl_exec($ch);
@@ -216,6 +228,9 @@ class s3_client {
             CURLOPT_HTTPHEADER => $this->format_headers($headers),
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
         ]);
 
         $response = curl_exec($ch);
