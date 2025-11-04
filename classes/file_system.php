@@ -112,10 +112,13 @@ class file_system extends \file_system {
      * Add file to storage.
      *
      * @param string $pathname Path to local file
-     * @param string $contenthash Content hash (SHA1)
+     * @param string|null $contenthash Content hash (SHA1). If null, computed from file.
      * @return bool Success
      */
-    public function add_file_from_path($pathname, $contenthash) {
+    public function add_file_from_path($pathname, $contenthash = null) {
+        if ($contenthash === null) {
+            $contenthash = @hash_file('sha1', $pathname) ?: '';
+        }
         $key = $this->get_remote_path_from_hash($contenthash);
         
         $this->log_debug('add_file_from_path called', [
@@ -155,13 +158,16 @@ class file_system extends \file_system {
      * Add file from string content.
      *
      * @param string $content File content
-     * @param string $contenthash Content hash
+     * @param string|null $contenthash Content hash. If null, computed from content.
      * @return bool Success
      */
-    public function add_file_from_string($content, $contenthash) {
+    public function add_file_from_string($content, $contenthash = null) {
         // Write to temp file first
         $tempfile = tempnam(sys_get_temp_dir(), 'moodle_');
         file_put_contents($tempfile, $content);
+        if ($contenthash === null) {
+            $contenthash = sha1($content);
+        }
         
         $result = $this->add_file_from_path($tempfile, $contenthash);
         

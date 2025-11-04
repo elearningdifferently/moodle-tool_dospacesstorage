@@ -8,12 +8,13 @@
 require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
 
-admin_externalpage_setup('tool_dospacesstorage');
-
+require_login();
 $context = context_system::instance();
 require_capability('moodle/site:config', $context);
 
-$PAGE->set_url('/admin/tool/dospacesstorage/debug_log.php');
+$PAGE->set_context($context);
+$PAGE->set_url(new moodle_url('/admin/tool/dospacesstorage/debug_log.php'));
+$PAGE->set_pagelayout('report');
 $PAGE->set_title('DO Spaces Debug Log');
 $PAGE->set_heading('DO Spaces Debug Log');
 
