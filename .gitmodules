@@ -1,0 +1,3 @@
+[submodule "admin/tool/dospacesstorage"]
+	path = admin/tool/dospacesstorage
+	url = https://github.com/elearningdifferently/moodle-tool_dospacesstorage.git

@@ -37,6 +37,9 @@ class s3_client {
     /** @var string Endpoint URL */
     protected $endpoint;
 
+    /** @var string CDN endpoint URL (optional) */
+    protected $cdnendpoint;
+
     /**
      * Constructor.
      *
@@ -44,12 +47,14 @@ class s3_client {
      * @param string $secret Secret key
      * @param string $region Region (e.g., 'nyc3')
      * @param string $endpoint Endpoint URL
+     * @param string $cdnendpoint CDN endpoint URL (optional)
      */
-    public function __construct($key, $secret, $region, $endpoint) {
+    public function __construct($key, $secret, $region, $endpoint, $cdnendpoint = '') {
         $this->key = $key;
         $this->secret = $secret;
         $this->region = $region;
         $this->endpoint = rtrim($endpoint, '/');
+        $this->cdnendpoint = $cdnendpoint ? rtrim($cdnendpoint, '/') : '';
     }
 
     /**
@@ -109,26 +114,37 @@ class s3_client {
      * @throws \Exception On error
      */
     public function get_object($bucket, $key, $filepath) {
-        $url = $this->get_url($bucket, $key);
+        // Use CDN endpoint for downloads if available
+        $url = $this->cdnendpoint 
+            ? $this->cdnendpoint . '/' . $bucket . '/' . ltrim($key, '/')
+            : $this->get_url($bucket, $key);
         
-        $headers = [
-            'x-amz-content-sha256' => hash('sha256', ''),
-        ];
-
-        $signature = $this->sign_request('GET', $bucket, $key, $headers);
-        $headers['Authorization'] = $signature;
-
         $fp = fopen($filepath, 'w');
         if (!$fp) {
             throw new \Exception("Cannot open file for writing: $filepath");
         }
 
         $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_HTTPHEADER => $this->format_headers($headers),
-            CURLOPT_FILE => $fp,
-            CURLOPT_FOLLOWLOCATION => true,
-        ]);
+        
+        // CDN doesn't require authentication, regular endpoint does
+        if ($this->cdnendpoint) {
+            curl_setopt_array($ch, [
+                CURLOPT_FILE => $fp,
+                CURLOPT_FOLLOWLOCATION => true,
+            ]);
+        } else {
+            $headers = [
+                'x-amz-content-sha256' => hash('sha256', ''),
+            ];
+            $signature = $this->sign_request('GET', $bucket, $key, $headers);
+            $headers['Authorization'] = $signature;
+            
+            curl_setopt_array($ch, [
+                CURLOPT_HTTPHEADER => $this->format_headers($headers),
+                CURLOPT_FILE => $fp,
+                CURLOPT_FOLLOWLOCATION => true,
+            ]);
+        }
 
         curl_exec($ch);
         $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);

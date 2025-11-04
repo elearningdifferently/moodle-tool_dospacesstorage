@@ -58,13 +58,15 @@ class file_system extends \file_system {
         // Set defaults
         $this->config['cache_path'] = $this->config['cache_path'] ?? '/tmp/moodledata/spacescache';
         $this->config['cache_max_size'] = $this->config['cache_max_size'] ?? 1073741824; // 1GB
+        $this->config['cdn_endpoint'] = $this->config['cdn_endpoint'] ?? '';
 
         // Initialize S3 client
         $this->client = new s3_client(
             $this->config['key'],
             $this->config['secret'],
             $this->config['region'],
-            $this->config['endpoint']
+            $this->config['endpoint'],
+            $this->config['cdn_endpoint']
         );
 
         // Initialize cache manager

@@ -60,6 +60,7 @@ DO_SPACES_SECRET=your_spaces_secret_key
 DO_SPACES_BUCKET=your-bucket-name
 DO_SPACES_REGION=nyc3
 DO_SPACES_ENDPOINT=https://nyc3.digitaloceanspaces.com
+DO_SPACES_CDN_ENDPOINT=https://your-bucket-name.nyc3.cdn.digitaloceanspaces.com
 ```
 
 **Region and Endpoint Examples:**
@@ -80,6 +81,8 @@ $CFG->dospacesstorage = [
     'bucket' => getenv('DO_SPACES_BUCKET'),
     'region' => getenv('DO_SPACES_REGION') ?: 'nyc3',
     'endpoint' => getenv('DO_SPACES_ENDPOINT') ?: 'https://nyc3.digitaloceanspaces.com',
+    // Optional: CDN endpoint for faster downloads (recommended!)
+    'cdn_endpoint' => getenv('DO_SPACES_CDN_ENDPOINT') ?: '',
     // Optional: Local cache settings
     'cache_path' => '/tmp/moodledata/spacescache', // Cache directory (ephemeral OK)
     'cache_max_size' => 1073741824, // Max cache size in bytes (1GB default)
@@ -134,9 +137,31 @@ Perfect for DigitalOcean App Platform:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
+| `cdn_endpoint` | `''` (empty) | CDN endpoint for fast downloads (highly recommended) |
 | `cache_path` | `/tmp/moodledata/spacescache` | Local cache directory |
 | `cache_max_size` | `1073741824` (1GB) | Maximum cache size in bytes |
 | `use_path_style` | `false` | Use path-style URLs (rarely needed) |
+
+### CDN Configuration (Recommended for Performance)
+
+Enable DigitalOcean Spaces CDN for significantly faster file downloads:
+
+1. **Enable CDN in DO Control Panel:**
+   - Go to your Space → Settings → CDN
+   - Click "Enable CDN"
+   - Note the CDN endpoint (e.g., `your-bucket.nyc3.cdn.digitaloceanspaces.com`)
+
+2. **Add to environment variables:**
+   ```
+   DO_SPACES_CDN_ENDPOINT=https://your-bucket-name.nyc3.cdn.digitaloceanspaces.com
+   ```
+
+3. **Benefits:**
+   - Files served from global edge locations (closest to users)
+   - 50-200ms latency improvement for international users
+   - First 1TB/month is FREE
+   - Uploads still go directly to Space (for consistency)
+   - Downloads come from CDN (for speed)
 
 ## Troubleshooting
 
