@@ -39,10 +39,32 @@ class file_system extends \file_system {
     protected $config;
 
     /**
+     * Log debug message to file.
+     *
+     * @param string $message Log message
+     * @param array $context Additional context
+     */
+    private function log_debug($message, $context = []) {
+        global $CFG;
+        
+        $logfile = $CFG->dataroot . '/dospacesstorage.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $contextstr = !empty($context) ? ' | ' . json_encode($context) : '';
+        $logline = "[$timestamp] $message$contextstr\n";
+        
+        error_log($logline, 3, $logfile);
+    }
+
+    /**
      * Constructor.
      */
     public function __construct() {
         global $CFG;
+
+        $this->log_debug('DO Spaces file_system: Constructor called', [
+            'script' => $_SERVER['SCRIPT_NAME'] ?? 'cli',
+            'request_uri' => $_SERVER['REQUEST_URI'] ?? 'n/a',
+        ]);
 
         // Get configuration
         $this->config = $CFG->dospacesstorage ?? [];
@@ -51,6 +73,7 @@ class file_system extends \file_system {
         $required = ['key', 'secret', 'bucket', 'region', 'endpoint'];
         foreach ($required as $key) {
             if (empty($this->config[$key])) {
+                $this->log_debug("DO Spaces file_system: Missing config: $key");
                 throw new \moodle_exception('missingconfig', 'tool_dospacesstorage', '', $key);
             }
         }
@@ -59,6 +82,13 @@ class file_system extends \file_system {
         $this->config['cache_path'] = $this->config['cache_path'] ?? '/tmp/moodledata/spacescache';
         $this->config['cache_max_size'] = $this->config['cache_max_size'] ?? 1073741824; // 1GB
         $this->config['cdn_endpoint'] = $this->config['cdn_endpoint'] ?? '';
+
+        $this->log_debug('DO Spaces file_system: Configuration loaded', [
+            'bucket' => $this->config['bucket'],
+            'region' => $this->config['region'],
+            'cache_path' => $this->config['cache_path'],
+            'cdn_enabled' => !empty($this->config['cdn_endpoint']),
+        ]);
 
         // Initialize S3 client
         $this->client = new s3_client(
@@ -74,6 +104,8 @@ class file_system extends \file_system {
             $this->config['cache_path'],
             $this->config['cache_max_size']
         );
+
+        $this->log_debug('DO Spaces file_system: Initialized successfully');
     }
 
     /**
@@ -86,15 +118,34 @@ class file_system extends \file_system {
     public function add_file_from_path($pathname, $contenthash) {
         $key = $this->get_remote_path_from_hash($contenthash);
         
+        $this->log_debug('add_file_from_path called', [
+            'contenthash' => substr($contenthash, 0, 8) . '...',
+            'pathname' => $pathname,
+            'filesize' => file_exists($pathname) ? filesize($pathname) : 'file not found',
+            'key' => $key,
+        ]);
+        
         try {
+            $start = microtime(true);
+            
             // Upload to Spaces
             $this->client->put_object($this->config['bucket'], $key, $pathname);
+            
+            $duration = round((microtime(true) - $start) * 1000, 2);
+            $this->log_debug('Upload completed', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+                'duration_ms' => $duration,
+            ]);
             
             // Add to local cache
             $this->cache->add($contenthash, $pathname);
             
             return true;
         } catch (\Exception $e) {
+            $this->log_debug('Upload failed', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+                'error' => $e->getMessage(),
+            ]);
             debugging('Failed to upload file to DO Spaces: ' . $e->getMessage(), DEBUG_DEVELOPER);
             return false;
         }
@@ -126,13 +177,20 @@ class file_system extends \file_system {
      * @return string|bool Local file path or false
      */
     public function get_local_path_from_hash($contenthash, $fetchifnotfound = false) {
+        $this->log_debug('get_local_path_from_hash called', [
+            'contenthash' => substr($contenthash, 0, 8) . '...',
+            'fetchifnotfound' => $fetchifnotfound,
+        ]);
+
         // Check cache first
         $cachedpath = $this->cache->get($contenthash);
         if ($cachedpath && file_exists($cachedpath)) {
+            $this->log_debug('Cache hit', ['contenthash' => substr($contenthash, 0, 8) . '...']);
             return $cachedpath;
         }
 
         if (!$fetchifnotfound) {
+            $this->log_debug('Not in cache, fetch disabled', ['contenthash' => substr($contenthash, 0, 8) . '...']);
             return false;
         }
 
@@ -140,7 +198,14 @@ class file_system extends \file_system {
         $key = $this->get_remote_path_from_hash($contenthash);
         $localpath = $this->cache->get_cache_path($contenthash);
 
+        $this->log_debug('Downloading from Spaces', [
+            'contenthash' => substr($contenthash, 0, 8) . '...',
+            'key' => $key,
+        ]);
+
         try {
+            $start = microtime(true);
+
             // Ensure directory exists
             $dir = dirname($localpath);
             if (!is_dir($dir)) {
@@ -150,11 +215,22 @@ class file_system extends \file_system {
             // Download file
             $this->client->get_object($this->config['bucket'], $key, $localpath);
             
+            $duration = round((microtime(true) - $start) * 1000, 2);
+            $this->log_debug('Download completed', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+                'duration_ms' => $duration,
+                'filesize' => filesize($localpath),
+            ]);
+            
             // Add to cache
             $this->cache->add($contenthash, $localpath);
             
             return $localpath;
         } catch (\Exception $e) {
+            $this->log_debug('Download failed', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+                'error' => $e->getMessage(),
+            ]);
             debugging('Failed to download file from DO Spaces: ' . $e->getMessage(), DEBUG_DEVELOPER);
             return false;
         }
@@ -183,9 +259,28 @@ class file_system extends \file_system {
     public function is_file_readable_remotely_by_hash($contenthash) {
         $key = $this->get_remote_path_from_hash($contenthash);
         
+        $this->log_debug('is_file_readable_remotely_by_hash called', [
+            'contenthash' => substr($contenthash, 0, 8) . '...',
+            'key' => $key,
+        ]);
+        
         try {
-            return $this->client->head_object($this->config['bucket'], $key);
+            $start = microtime(true);
+            $result = $this->client->head_object($this->config['bucket'], $key);
+            $duration = round((microtime(true) - $start) * 1000, 2);
+            
+            $this->log_debug('HEAD request completed', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+                'exists' => $result,
+                'duration_ms' => $duration,
+            ]);
+            
+            return $result;
         } catch (\Exception $e) {
+            $this->log_debug('HEAD request failed', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+                'error' => $e->getMessage(),
+            ]);
             return false;
         }
     }
