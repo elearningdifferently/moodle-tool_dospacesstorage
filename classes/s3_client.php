@@ -117,53 +117,41 @@ class s3_client {
      * @throws \Exception On error
      */
     public function get_object($bucket, $key, $filepath) {
-        // Use CDN endpoint for downloads if available
-        $url = $this->cdnendpoint 
-            ? $this->cdnendpoint . '/' . $bucket . '/' . ltrim($key, '/')
-            : $this->get_url($bucket, $key);
-        
         $fp = fopen($filepath, 'w');
         if (!$fp) {
             throw new \Exception("Cannot open file for writing: $filepath");
         }
 
-        $ch = curl_init($url);
+        // Always use authenticated endpoint (not CDN) for downloads
+        // CDN can be enabled later once bucket permissions are confirmed
+        $url = $this->get_url($bucket, $key);
         
-        // CDN doesn't require authentication, regular endpoint does
-        if ($this->cdnendpoint) {
-            curl_setopt_array($ch, [
-                CURLOPT_FILE => $fp,
-                CURLOPT_FOLLOWLOCATION => true,
-                CURLOPT_CONNECTTIMEOUT => 5,
-                CURLOPT_TIMEOUT => 20,
-                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            ]);
-        } else {
-            $headers = [
-                'x-amz-content-sha256' => hash('sha256', ''),
-            ];
-            $signature = $this->sign_request('GET', $bucket, $key, $headers);
-            $headers['Authorization'] = $signature;
-            
-            curl_setopt_array($ch, [
-                CURLOPT_HTTPHEADER => $this->format_headers($headers),
-                CURLOPT_FILE => $fp,
-                CURLOPT_FOLLOWLOCATION => true,
-                CURLOPT_CONNECTTIMEOUT => 5,
-                CURLOPT_TIMEOUT => 20,
-                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            ]);
-        }
+        $headers = [
+            'x-amz-content-sha256' => hash('sha256', ''),
+        ];
+        $signature = $this->sign_request('GET', $bucket, $key, $headers);
+        $headers['Authorization'] = $signature;
+        
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_HTTPHEADER => $this->format_headers($headers),
+            CURLOPT_FILE => $fp,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT => 20,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        ]);
 
         curl_exec($ch);
         $httpcode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
+        $effectiveurl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
         curl_close($ch);
         fclose($fp);
 
         if ($httpcode < 200 || $httpcode >= 300) {
             @unlink($filepath);
-            throw new \Exception("S3 GET failed (HTTP $httpcode): $error");
+            throw new \Exception("S3 GET failed (HTTP $httpcode) from $effectiveurl: $error");
         }
 
         return true;
