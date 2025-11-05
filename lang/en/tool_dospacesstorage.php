@@ -17,4 +17,5 @@
 defined('MOODLE_INTERNAL') || die();
 
 $string['pluginname'] = 'DigitalOcean Spaces Storage';
+$string['debuglog'] = 'Debug Log Viewer';
 $string['privacy:metadata'] = 'The DigitalOcean Spaces Storage plugin does not store any personal data. It only manages where Moodle files are stored.';
