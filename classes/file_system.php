@@ -348,7 +348,27 @@ class file_system extends \file_system {
         $this->log_debug('get_local_path_from_storedfile override', [
             'contenthash' => substr($contenthash, 0, 8) . '...'
         ]);
-        return $this->get_local_path_from_hash($contenthash, true);
+        $path = $this->get_local_path_from_hash($contenthash, true);
+        if ($path) {
+            $exists = file_exists($path);
+            $readable = is_readable($path);
+            $size = $exists ? filesize($path) : null;
+            $this->log_debug('get_local_path_from_storedfile post-fetch check', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+                'path' => $path,
+                'exists' => $exists,
+                'readable' => $readable,
+                'size' => $size,
+            ]);
+            if ($exists && !$readable) {
+                $this->log_debug('WARNING: File exists but is not readable', ['path' => $path]);
+            }
+        } else {
+            $this->log_debug('get_local_path_from_storedfile failed to obtain path', [
+                'contenthash' => substr($contenthash, 0, 8) . '...'
+            ]);
+        }
+        return $path;
     }
 
     /**
