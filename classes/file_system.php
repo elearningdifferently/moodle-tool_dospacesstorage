@@ -392,6 +392,42 @@ class file_system extends \file_system {
     }
 
     /**
+     * Get a file handle for the specified stored file.
+     *
+     * Override to ensure we always use local paths, since fopen() doesn't work with
+     * remote HTTPS URLs in the way core expects.
+     *
+     * @param \stored_file $file The file to get a handle for
+     * @param int $type Type of file handle (FILE_HANDLE_FOPEN or FILE_HANDLE_GZOPEN)
+     * @return resource File handle
+     */
+    public function get_content_file_handle(\stored_file $file, $type = \stored_file::FILE_HANDLE_FOPEN) {
+        $this->log_debug('get_content_file_handle called', [
+            'contenthash' => substr($file->get_contenthash(), 0, 8) . '...',
+            'filename' => $file->get_filename(),
+            'type' => $type,
+        ]);
+
+        // Always fetch local path for file handles since fopen/gzopen need local files.
+        $path = $this->get_local_path_from_storedfile($file, true);
+        
+        if (!$path || !is_readable($path)) {
+            $this->log_debug('get_content_file_handle failed: path not readable', [
+                'path' => $path,
+                'contenthash' => substr($file->get_contenthash(), 0, 8) . '...',
+            ]);
+            return false;
+        }
+
+        $this->log_debug('get_content_file_handle returning handle', [
+            'path' => $path,
+            'type' => $type,
+        ]);
+
+        return self::get_file_handle_for_path($path, $type);
+    }
+
+    /**
      * List all files in storage (not implemented - not needed for normal operation).
      *
      * @return array Empty array
