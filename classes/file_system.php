@@ -333,6 +333,25 @@ class file_system extends \file_system {
     }
 
     /**
+     * Ensure we always have a local path for a stored_file; override core so we can fetch from Spaces.
+     *
+     * Core implementation for local file systems may return a path without forcing a download.
+     * For remote storage we need to guarantee the file exists locally for subsequent operations
+     * (image info, mime detection, copying, etc.). Therefore we always pass fetch=true.
+     *
+     * @param \stored_file $file Stored file instance
+     * @param bool $fetchifnotfound (ignored, we always fetch)
+     * @return string|false Local path or false on failure
+     */
+    public function get_local_path_from_storedfile(\stored_file $file, $fetchifnotfound = false) {
+        $contenthash = $file->get_contenthash();
+        $this->log_debug('get_local_path_from_storedfile override', [
+            'contenthash' => substr($contenthash, 0, 8) . '...'
+        ]);
+        return $this->get_local_path_from_hash($contenthash, true);
+    }
+
+    /**
      * Copy content of stored_file to target pathname.
      *
      * @param \stored_file $file
