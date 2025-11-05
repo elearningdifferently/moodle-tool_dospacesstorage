@@ -56,6 +56,10 @@ class cache_manager {
      * @return string Local path
      */
     public function get_cache_path($contenthash) {
+        if (empty($contenthash)) {
+            throw new \coding_exception('Content hash cannot be empty');
+        }
+        
         // Mirror Moodle's directory structure
         $l1 = substr($contenthash, 0, 2);
         $l2 = substr($contenthash, 2, 2);
