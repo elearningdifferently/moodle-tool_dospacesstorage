@@ -384,6 +384,8 @@ class file_system extends \file_system {
             ]);
         }
         return $path;
+    }
+    
     /**
      * Output the content of the specified stored file.
      *
