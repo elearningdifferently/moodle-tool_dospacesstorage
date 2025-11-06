@@ -119,7 +119,7 @@ class file_system extends \file_system {
         global $CFG;
         [$contenthash, $filesize] = \file_system::validate_hash_and_file_size($contenthash, $pathname);
 
-        $key = $this->get_remote_path_from_hash($contenthash);
+        $key = $this->get_s3_key_from_hash($contenthash);
         
         $this->log_debug('add_file_from_path called', [
             'contenthash' => substr($contenthash, 0, 8) . '...',
@@ -205,7 +205,7 @@ class file_system extends \file_system {
         }
 
         // Download from Spaces
-        $key = $this->get_remote_path_from_hash($contenthash);
+        $key = $this->get_s3_key_from_hash($contenthash);
         $localpath = $this->cache->get_cache_path($contenthash);
 
         $this->log_debug('Downloading from Spaces', [
@@ -247,17 +247,40 @@ class file_system extends \file_system {
     }
 
     /**
-     * Get remote storage path from contenthash.
+     * Get S3 key path from contenthash (internal helper).
      *
      * @param string $contenthash Content hash
-     * @return string Remote key/path
+     * @return string S3 key path
      */
-    public function get_remote_path_from_hash($contenthash) {
-        // Return full authenticated URL for remote operations like file_get_contents().
-        // This is used by stored_file->get_content() during theme SCSS compilation.
+    protected function get_s3_key_from_hash($contenthash) {
         $l1 = substr($contenthash, 0, 2);
         $l2 = substr($contenthash, 2, 2);
-        $key = "$l1/$l2/$contenthash";
+        return "$l1/$l2/$contenthash";
+    }
+
+    /**
+     * Get S3 key path from contenthash (internal helper).
+     *
+     * @param string $contenthash Content hash
+     * @return string S3 key path
+     */
+    protected function get_s3_key_from_hash($contenthash) {
+        $l1 = substr($contenthash, 0, 2);
+        $l2 = substr($contenthash, 2, 2);
+        return "$l1/$l2/$contenthash";
+    }
+
+    /**
+     * Get remote storage path from contenthash.
+     *
+     * This returns a full authenticated URL that can be used by file_get_contents()
+     * and similar functions. Used by stored_file->get_content() during theme SCSS compilation.
+     *
+     * @param string $contenthash Content hash
+     * @return string Full authenticated URL
+     */
+    public function get_remote_path_from_hash($contenthash) {
+        $key = $this->get_s3_key_from_hash($contenthash);
         
         // Generate authenticated URL valid for 1 hour
         $url = $this->client->get_presigned_url(
@@ -282,7 +305,7 @@ class file_system extends \file_system {
      * @return bool Exists
      */
     public function is_file_readable_remotely_by_hash($contenthash) {
-        $key = $this->get_remote_path_from_hash($contenthash);
+        $key = $this->get_s3_key_from_hash($contenthash);
         
         $this->log_debug('is_file_readable_remotely_by_hash called', [
             'contenthash' => substr($contenthash, 0, 8) . '...',
@@ -317,7 +340,7 @@ class file_system extends \file_system {
      * @return bool Success
      */
     public function remove_file($contenthash) {
-        $key = $this->get_remote_path_from_hash($contenthash);
+        $key = $this->get_s3_key_from_hash($contenthash);
         
         try {
             // Remove from Spaces
@@ -427,8 +450,6 @@ class file_system extends \file_system {
         }
 
         $this->log_debug('readfile completed successfully');
-    }
-
     }
 
     /**
