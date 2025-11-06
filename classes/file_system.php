@@ -259,18 +259,6 @@ class file_system extends \file_system {
     }
 
     /**
-     * Get S3 key path from contenthash (internal helper).
-     *
-     * @param string $contenthash Content hash
-     * @return string S3 key path
-     */
-    protected function get_s3_key_from_hash($contenthash) {
-        $l1 = substr($contenthash, 0, 2);
-        $l2 = substr($contenthash, 2, 2);
-        return "$l1/$l2/$contenthash";
-    }
-
-    /**
      * Get remote storage path from contenthash.
      *
      * For DO Spaces, we can't return a streamable URL that PHP's file_get_contents()
