@@ -253,11 +253,26 @@ class file_system extends \file_system {
      * @return string Remote key/path
      */
     public function get_remote_path_from_hash($contenthash) {
-        // Moodle standard: split hash into directory structure
-        // e.g., abc123... becomes ab/c1/abc123...
+        // Return full authenticated URL for remote operations like file_get_contents().
+        // This is used by stored_file->get_content() during theme SCSS compilation.
         $l1 = substr($contenthash, 0, 2);
         $l2 = substr($contenthash, 2, 2);
-        return "$l1/$l2/$contenthash";
+        $key = "$l1/$l2/$contenthash";
+        
+        // Generate authenticated URL valid for 1 hour
+        $url = $this->client->get_presigned_url(
+            $this->config['bucket'],
+            $key,
+            3600  // 1 hour expiry
+        );
+        
+        $this->log_debug('get_remote_path_from_hash', [
+            'contenthash' => substr($contenthash, 0, 8) . '...',
+            'key' => $key,
+            'url' => substr($url, 0, 100) . '...',
+        ]);
+        
+        return $url;
     }
 
     /**
