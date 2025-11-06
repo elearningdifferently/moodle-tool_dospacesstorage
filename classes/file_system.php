@@ -369,6 +369,49 @@ class file_system extends \file_system {
             ]);
         }
         return $path;
+    /**
+     * Output the content of the specified stored file.
+     *
+     * Override core readfile() to ensure we always use local paths.
+     * Core tries to use remote paths if file not locally cached, but readfile()
+     * can't handle HTTPS URLs the way it expects.
+     *
+     * @param \stored_file $file The file to serve.
+     * @return void
+     * @throws \file_exception
+     */
+    public function readfile(\stored_file $file) {
+        $this->log_debug('readfile called', [
+            'contenthash' => substr($file->get_contenthash(), 0, 8) . '...',
+            'filename' => $file->get_filename(),
+        ]);
+
+        // Always get local path with fetch=true to ensure file is downloaded.
+        $path = $this->get_local_path_from_storedfile($file, true);
+        
+        if (!$path || !is_readable($path)) {
+            $this->log_debug('readfile ERROR: path not readable', [
+                'path' => $path,
+                'filename' => $file->get_filename(),
+            ]);
+            throw new \file_exception('storedfilecannotreadfile', $file->get_filename());
+        }
+
+        $this->log_debug('readfile calling readfile_allow_large', [
+            'path' => $path,
+            'filesize' => $file->get_filesize(),
+        ]);
+
+        if (readfile_allow_large($path, $file->get_filesize()) === false) {
+            $this->log_debug('readfile ERROR: readfile_allow_large failed', [
+                'path' => $path,
+            ]);
+            throw new \file_exception('storedfilecannotreadfile', $file->get_filename());
+        }
+
+        $this->log_debug('readfile completed successfully');
+    }
+
     }
 
     /**

@@ -18,7 +18,7 @@ defined('MOODLE_INTERNAL') || die();
 
 $plugin = new stdClass();
 $plugin->component = 'tool_dospacesstorage';
-$plugin->release = '1.2.1';
-$plugin->version = 2025110405;
+$plugin->release = '1.3.0';
+$plugin->version = 2025110406;
 $plugin->requires = 2023100900; // Moodle 4.3+
 $plugin->maturity = MATURITY_STABLE;
