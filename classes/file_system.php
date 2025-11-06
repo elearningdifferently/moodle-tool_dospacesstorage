@@ -428,6 +428,78 @@ class file_system extends \file_system {
     }
 
     /**
+     * Get image information for a stored file.
+     *
+     * Override to add detailed logging for debugging course image issues.
+     *
+     * @param \stored_file $file The file to get image info for
+     * @return array|false Image info array or false
+     */
+    public function get_imageinfo_from_storedfile(\stored_file $file) {
+        $contenthash = $file->get_contenthash();
+        $filename = $file->get_filename();
+        
+        $this->log_debug('get_imageinfo_from_storedfile called', [
+            'contenthash' => substr($contenthash, 0, 8) . '...',
+            'filename' => $filename,
+            'filesize' => $file->get_filesize(),
+        ]);
+
+        // Check cache first (same as parent).
+        $cache = \cache::make('core', 'file_imageinfo');
+        $info = $cache->get($contenthash);
+        if ($info !== false) {
+            $this->log_debug('get_imageinfo_from_storedfile cache hit', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+            ]);
+            return $info;
+        }
+
+        // Get local path.
+        $path = $this->get_local_path_from_storedfile($file, true);
+        
+        if (!$path || !file_exists($path)) {
+            $this->log_debug('get_imageinfo_from_storedfile ERROR: path not found', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+                'filename' => $filename,
+                'path' => $path,
+            ]);
+            return false;
+        }
+
+        if (!is_readable($path)) {
+            $this->log_debug('get_imageinfo_from_storedfile ERROR: path not readable', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+                'filename' => $filename,
+                'path' => $path,
+                'perms' => substr(sprintf('%o', fileperms($path)), -4),
+            ]);
+            return false;
+        }
+
+        $this->log_debug('get_imageinfo_from_storedfile getting info from path', [
+            'path' => $path,
+        ]);
+
+        $info = $this->get_imageinfo_from_path($path);
+        
+        if ($info === false) {
+            $this->log_debug('get_imageinfo_from_storedfile WARNING: get_imageinfo_from_path returned false', [
+                'path' => $path,
+                'filename' => $filename,
+            ]);
+        } else {
+            $cache->set($contenthash, $info);
+            $this->log_debug('get_imageinfo_from_storedfile success', [
+                'width' => $info['width'] ?? null,
+                'height' => $info['height'] ?? null,
+            ]);
+        }
+
+        return $info;
+    }
+
+    /**
      * List all files in storage (not implemented - not needed for normal operation).
      *
      * @return array Empty array
