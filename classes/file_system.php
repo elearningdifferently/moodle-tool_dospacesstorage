@@ -39,19 +39,60 @@ class file_system extends \file_system {
     protected $config;
 
     /**
+     * Track contenthashes uploaded during the current request to avoid duplicate PUTs.
+     *
+     * @var array<string, bool>
+     */
+    private $uploadedhashes = [];
+
+    /**
+     * Whether verbose debug logging is enabled.
+     * Controlled via $CFG->dospacesstorage['verbose_logging'] (default false).
+     *
+     * @return bool
+     */
+    private function is_verbose_logging_enabled(): bool {
+        return !empty($this->config['verbose_logging']);
+    }
+
+    /**
      * Log debug message to file.
      *
      * @param string $message Log message
      * @param array $context Additional context
      */
     private function log_debug($message, $context = []) {
+        if (!$this->is_verbose_logging_enabled()) {
+            return; // Suppress non-error logs unless verbose enabled.
+        }
+        $this->write_log('DEBUG', $message, $context);
+    }
+
+    /**
+     * Log an error message which is always recorded regardless of verbosity.
+     *
+     * @param string $message
+     * @param array $context
+     */
+    private function log_error($message, $context = []) {
+        $this->write_log('ERROR', $message, $context);
+    }
+
+    /**
+     * Internal log writer.
+     *
+     * @param string $level
+     * @param string $message
+     * @param array $context
+     */
+    private function write_log(string $level, string $message, array $context = []) {
         global $CFG;
-        
+
         $logfile = $CFG->dataroot . '/dospacesstorage.log';
         $timestamp = date('Y-m-d H:i:s');
         $contextstr = !empty($context) ? ' | ' . json_encode($context) : '';
-        $logline = "[$timestamp] $message$contextstr\n";
-        
+        $logline = "[$timestamp] [$level] $message$contextstr\n";
+
         error_log($logline, 3, $logfile);
     }
 
@@ -81,7 +122,8 @@ class file_system extends \file_system {
         // Set defaults
         $this->config['cache_path'] = $this->config['cache_path'] ?? '/tmp/moodledata/spacescache';
         $this->config['cache_max_size'] = $this->config['cache_max_size'] ?? 1073741824; // 1GB
-        $this->config['cdn_endpoint'] = $this->config['cdn_endpoint'] ?? '';
+    $this->config['cdn_endpoint'] = $this->config['cdn_endpoint'] ?? '';
+    $this->config['verbose_logging'] = $this->config['verbose_logging'] ?? false;
 
         $this->log_debug('DO Spaces file_system: Configuration loaded', [
             'bucket' => $this->config['bucket'],
@@ -128,6 +170,50 @@ class file_system extends \file_system {
             'key' => $key,
         ]);
         
+        // Optimization 1: If we already uploaded this hash in this request, skip remote PUT.
+        if (isset($this->uploadedhashes[$contenthash])) {
+            $this->log_debug('Skip upload - already uploaded this request', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+            ]);
+
+            // Ensure file present in local cache for immediate use.
+            $cachepath = $this->cache->get_cache_path($contenthash);
+            $dir = dirname($cachepath);
+            if (!is_dir($dir)) {
+                mkdir($dir, 0777, true);
+            }
+            @copy($pathname, $cachepath);
+            $this->cache->add($contenthash, $cachepath);
+            return [$contenthash, $filesize, false];
+        }
+
+        // Optimization 2: HEAD remote object to avoid duplicate upload across requests.
+        try {
+            $exists = $this->client->head_object($this->config['bucket'], $key);
+            if ($exists) {
+                $this->log_debug('Skip upload - remote object exists', [
+                    'contenthash' => substr($contenthash, 0, 8) . '...',
+                ]);
+                $this->uploadedhashes[$contenthash] = true;
+
+                // Populate local cache to avoid future downloads in this request.
+                $cachepath = $this->cache->get_cache_path($contenthash);
+                $dir = dirname($cachepath);
+                if (!is_dir($dir)) {
+                    mkdir($dir, 0777, true);
+                }
+                @copy($pathname, $cachepath);
+                $this->cache->add($contenthash, $cachepath);
+                return [$contenthash, $filesize, false];
+            }
+        } catch (\Exception $e) {
+            // If HEAD fails (network/permissions), continue with upload attempt.
+            $this->log_debug('HEAD before upload failed - proceeding to PUT', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+                'error' => $e->getMessage(),
+            ]);
+        }
+        
         try {
             $start = microtime(true);
             
@@ -139,6 +225,9 @@ class file_system extends \file_system {
                 'contenthash' => substr($contenthash, 0, 8) . '...',
                 'duration_ms' => $duration,
             ]);
+            
+            // Mark as uploaded this request.
+            $this->uploadedhashes[$contenthash] = true;
             
             // Add to local cache (store a local copy path consistent with cache manager)
             $cachepath = $this->cache->get_cache_path($contenthash);
@@ -153,7 +242,7 @@ class file_system extends \file_system {
             // Return expected tuple
             return [$contenthash, $filesize, true];
         } catch (\Exception $e) {
-            $this->log_debug('Upload failed', [
+            $this->log_error('Upload failed', [
                 'contenthash' => substr($contenthash, 0, 8) . '...',
                 'error' => $e->getMessage(),
             ]);
@@ -237,7 +326,7 @@ class file_system extends \file_system {
             
             return $localpath;
         } catch (\Exception $e) {
-            $this->log_debug('Download failed', [
+            $this->log_error('Download failed', [
                 'contenthash' => substr($contenthash, 0, 8) . '...',
                 'error' => $e->getMessage(),
             ]);
@@ -327,6 +416,10 @@ class file_system extends \file_system {
             
             return true;
         } catch (\Exception $e) {
+            $this->log_error('Failed to remove file from DO Spaces', [
+                'contenthash' => substr($contenthash, 0, 8) . '...',
+                'error' => $e->getMessage(),
+            ]);
             debugging('Failed to remove file from DO Spaces: ' . $e->getMessage(), DEBUG_DEVELOPER);
             return false;
         }
@@ -406,7 +499,7 @@ class file_system extends \file_system {
         $path = $this->get_local_path_from_storedfile($file, true);
         
         if (!$path || !is_readable($path)) {
-            $this->log_debug('readfile ERROR: path not readable', [
+            $this->log_error('readfile ERROR: path not readable', [
                 'path' => $path,
                 'filename' => $file->get_filename(),
             ]);
@@ -419,7 +512,7 @@ class file_system extends \file_system {
         ]);
 
         if (readfile_allow_large($path, $file->get_filesize()) === false) {
-            $this->log_debug('readfile ERROR: readfile_allow_large failed', [
+            $this->log_error('readfile ERROR: readfile_allow_large failed', [
                 'path' => $path,
             ]);
             throw new \file_exception('storedfilecannotreadfile', $file->get_filename());
@@ -469,7 +562,7 @@ class file_system extends \file_system {
         $path = $this->get_local_path_from_storedfile($file, true);
         
         if (!$path || !is_readable($path)) {
-            $this->log_debug('get_content_file_handle failed: path not readable', [
+            $this->log_error('get_content_file_handle failed: path not readable', [
                 'path' => $path,
                 'contenthash' => substr($file->get_contenthash(), 0, 8) . '...',
             ]);
@@ -516,7 +609,7 @@ class file_system extends \file_system {
         $path = $this->get_local_path_from_storedfile($file, true);
         
         if (!$path || !file_exists($path)) {
-            $this->log_debug('get_imageinfo_from_storedfile ERROR: path not found', [
+            $this->log_error('get_imageinfo_from_storedfile ERROR: path not found', [
                 'contenthash' => substr($contenthash, 0, 8) . '...',
                 'filename' => $filename,
                 'path' => $path,
@@ -525,7 +618,7 @@ class file_system extends \file_system {
         }
 
         if (!is_readable($path)) {
-            $this->log_debug('get_imageinfo_from_storedfile ERROR: path not readable', [
+            $this->log_error('get_imageinfo_from_storedfile ERROR: path not readable', [
                 'contenthash' => substr($contenthash, 0, 8) . '...',
                 'filename' => $filename,
                 'path' => $path,
