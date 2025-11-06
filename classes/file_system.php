@@ -273,29 +273,17 @@ class file_system extends \file_system {
     /**
      * Get remote storage path from contenthash.
      *
-     * This returns a full authenticated URL that can be used by file_get_contents()
-     * and similar functions. Used by stored_file->get_content() during theme SCSS compilation.
+     * For DO Spaces, we can't return a streamable URL that PHP's file_get_contents()
+     * can read directly (would need presigned URLs which are complex).
+     * Instead, we fetch the file locally and return that path.
      *
      * @param string $contenthash Content hash
-     * @return string Full authenticated URL
+     * @return string Local path (fetched if needed)
      */
     public function get_remote_path_from_hash($contenthash) {
-        $key = $this->get_s3_key_from_hash($contenthash);
-        
-        // Generate authenticated URL valid for 1 hour
-        $url = $this->client->get_presigned_url(
-            $this->config['bucket'],
-            $key,
-            3600  // 1 hour expiry
-        );
-        
-        $this->log_debug('get_remote_path_from_hash', [
-            'contenthash' => substr($contenthash, 0, 8) . '...',
-            'key' => $key,
-            'url' => substr($url, 0, 100) . '...',
-        ]);
-        
-        return $url;
+        // For remote storage, "remote path" doesn't make sense for direct access.
+        // Fetch locally and return local path instead.
+        return $this->get_local_path_from_hash($contenthash, true);
     }
 
     /**
